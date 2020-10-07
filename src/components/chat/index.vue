@@ -18,6 +18,7 @@ export default {
       data: [{}],
       recoverData: null,
       status: null,
+      lastEditRange: null,
     };
   },
   mounted() {
@@ -28,6 +29,9 @@ export default {
     this.loadDom();
   },
   methods: {
+    getCursorPos() {
+      this.lastEditRange = window.getSelection().getRangeAt(0);
+    },
     setCaret(el, pos) {
       let range = document.createRange();
       let sel = window.getSelection();
@@ -56,7 +60,7 @@ export default {
       // }
     },
     handleInput(e) {
-      console.log(e);
+      this.getCursorPos();
       this.checkEmptyCompose();
       const sel = window.getSelection();
       this.checkBr();
@@ -66,13 +70,26 @@ export default {
     },
     checkBr() {
       const inputComposer = this.$refs.inputComposer;
-      Array.from(inputComposer.childNodes).forEach((item) => {
-        console.log({ item: item.childNodes });
+      Array.from(inputComposer.childNodes).forEach(item => {
         if (
-          item.childNodes.length > 0 &&
-          item.childNodes[0].nodeName === "BR"
+          item.childNodes.length === 1 &&
+          item.childNodes[0].data === "" &&
+          item.childNodes[0].nodeName == "#text"
         ) {
-          console.log("remove");
+          item.appendChild(document.createElement("br"));
+        }
+        if (
+          item.childNodes.length === 2 &&
+          item.childNodes[0].nodeName === "BR" &&
+          item.childNodes[1].nodeName === "BR"
+        ) {
+          item.removeChild(item.childNodes[1]);
+        }
+        if (
+          item.childNodes.length >= 2 &&
+          item.childNodes[0].nodeName === "BR" &&
+          item.childNodes[1].nodeName !== "BR"
+        ) {
           item.removeChild(item.childNodes[0]);
         }
       });
@@ -87,51 +104,74 @@ export default {
         this.handleNewLine();
       }
     },
+    findInputLine(node) {
+      if (node.id !== "input-line") {
+        return this.findInputLine(node.parentElement);
+      } else return node;
+    },
+    isEndOfLine(sel) {
+      const { anchorNode, anchorOffset } = sel;
+      const node = this.findInputLine(anchorNode);
+      if (anchorNode.id === "input-line") return true;
+      else
+        return (
+          Array.from(anchorNode.parentElement.childNodes).indexOf(
+            anchorNode
+          ) ===
+            anchorNode.parentElement.childNodes.length - 1 &&
+          anchorNode.length === anchorOffset
+        );
+    },
+    addLine(lineDiv,indexAnchorNode) {
+      const inputComposer = this.$refs.inputComposer;
+      if (inputComposer.childNodes.length === 1) {
+        inputComposer.appendChild(lineDiv);
+      } else if (inputComposer.childNodes.length > 1) {
+        inputComposer.insertBefore(
+          lineDiv,
+          inputComposer.childNodes[indexAnchorNode + 1]
+        );
+      }
+    },
     handleNewLine() {
       // Gọt data
       const inputComposer = this.$refs.inputComposer;
       const sel = window.getSelection();
-      const { anchorNode } = sel;
+      const { anchorNode, anchorOffset } = sel;
       let lineNode, lineDiv;
+      lineNode = this.findInputLine(anchorNode);
       let node = anchorNode;
       lineDiv = document.createElement("div");
       lineDiv.style.width = "100%";
       lineDiv.setAttribute("id", `input-line`);
-      console.log({ sel, node });
-      console.log(
-        "cut",
-        anchorNode.cloneNode().nodeValue.slice(sel.anchorOffset)
+      const indexAnchorNode = Array.from(inputComposer.childNodes).indexOf(
+        lineNode
       );
-      console.log(sel.anchorOffset);
-      if (anchorNode.nodeName === "#text") {
+      //Case end of line
+      const isEndOfLine = this.isEndOfLine(sel);
+      if (isEndOfLine) {
+        lineDiv.appendChild(document.createElement("br"));
+        if (anchorNode.parentNode.childNodes.length === 0)
+          anchorNode.parentNode.appendChild(document.createElement("br"));
+        //Add line mới
+        this.addLine(lineDiv,indexAnchorNode)
+        this.setCaret(lineDiv, 1);
+      } else if (anchorNode.nodeName === "#text") {
         const textNode = document.createTextNode(
           anchorNode.cloneNode().nodeValue.slice(sel.anchorOffset)
         );
-        // anchorNode.nodeValue.replace(textNode.value,'')
-        const indexAnchorNode = Array.from(inputComposer.childNodes).indexOf(
-          anchorNode.parentElement
+        anchorNode.nodeValue = anchorNode.nodeValue.substring(
+          0,
+          sel.anchorOffset
         );
-        console.log("index", indexAnchorNode);
         lineDiv.appendChild(textNode);
-
+        console.log(anchorNode.parentNode);
+        if (lineDiv.childNodes.length === 0)
+          lineDiv.appendChild(document.createElement("br"));
         //Add line mới
-        if (inputComposer.childNodes.length === 1) {
-          inputComposer.appendChild(lineDiv);
-        } else if (inputComposer.childNodes.length > 1) {
-          inputComposer.insertBefore(
-            lineDiv,
-            inputComposer.childNodes[indexAnchorNode + 1]
-          );
-        }
+        this.addLine(lineDiv,indexAnchorNode)
         this.setCaret(lineDiv, 0);
       }
-      this.status = "newLine";
-      // anchorNode.removeChild(
-      //   anchorNode.childNodes[anchorNode.childNodes.length - 1]
-      // );
-      // anchorNode.removeChild(
-      //   anchorNode.childNodes[anchorNode.childNodes.length - 1]
-      // );
     },
     checkEmptyCompose() {
       //Luôn luôn tạo div cho dòng mới phòng trường hợp user dùng backspace clear content
@@ -143,6 +183,11 @@ export default {
         newLineDiv.style.width = "100%";
         inputComposer.appendChild(newLineDiv);
       }
+    },
+  },
+  watch: {
+    lastEditRange() {
+      console.log("Last edit range", { lastedit: this.lastEditRange });
     },
   },
 };
